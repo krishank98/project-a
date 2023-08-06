@@ -1,0 +1,52 @@
+pipeline {
+    agent any
+
+    stages {
+        stage("SCM") {
+            steps {
+                // Clone the 'develop' branch of the repository using Git credentials
+                git branch: 'develop', credentialsId: 'gitlab', url: 'http://gitlab.krish25.site/qrstaff/qrstaff-frontend.git'
+            }
+        }
+        
+        stage("Install") {
+            steps {
+                // Move to the 'frontend' directory and install dependencies using npm
+                dir('frontend') {
+                    sh "npm install"
+                }
+            }
+        }
+        
+        stage("Docker Image") {
+            steps {
+                // Move to the 'frontend' directory and build a Docker image
+                dir('frontend') {
+                    sh "docker build -t krish2356/pjstaf ."
+                }
+            }
+        }
+        
+        stage('Scan') {
+            steps {
+                sh 'curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/html.tpl > html.tpl'
+
+                // Scan all vuln levels
+                sh 'mkdir -p reports'
+                sh 'trivy filesystem --ignore-unfixed --vuln-type os,library --format template --template "@html.tpl" -o reports/nodjs-scan.html frontend'
+                publishHTML target: [
+                    allowMissing: true,
+                    alwaysLinkToLastBuild: true,
+                    keepAll: true,
+                    reportDir: 'reports',
+                    reportFiles: 'nodjs-scan.html',
+                    reportName: 'Trivy Scan',
+                    reportTitles: 'Trivy Scan'
+                ]
+
+                // Scan again and fail on CRITICAL vulns
+                sh 'trivy filesystem --ignore-unfixed --vuln-type os,library --exit-code 1 --severity CRITICAL frontend'
+            }
+        }
+    }
+}
